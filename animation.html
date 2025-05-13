@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Анимация</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Սինուսոիդի Գրաֆիկը</h1>
+    <nav>
+      <a href="index.html">Սինուսոիդը  Ճարտարապետության  մեջ</a>
+      <a href="about.html">Սինուսոիդը  Տնտեսագիթության  մեջ</a>
+      <a href="animation.html">Գրաֆիկը</a>
+      <a href="gallery.html">Սինուսոիդը  Մեր  Առօրյաում</a>
+    </nav>
+      <style>
+    canvas {
+      background-color: white;
+      border: 2px solid #ccc;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      margin: 20px auto;
+      display: block;
+    }
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: 90%;
+      max-width: 600px;
+      margin: 0 auto 20px;
+    }
+    .control {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .control label {
+      min-width: 190px;
+      font-weight: bold;
+      color: #1e293b;
+    }
+    input[type="range"], select, input[type="file"] {
+      width: 70%;
+    }
+    input[type="file"] {
+      font-weight: bold;
+      color: #1e293b;
+    }
+    button {
+      padding: 10px 16px;
+      background-color: #00146b8c;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background-color 0.3s ease;
+      margin-top: 10px;
+    }
+    button:hover {
+      background-color: #2980b9;
+    }
+    .timer {
+      font-weight: bold;
+      color: #2c3e50;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+    .range-label {
+      font-weight: bold;
+      width: 20%;
+    }
+    .range-value {
+      width: 10%;
+      text-align: right;
+    }
+  </style>
+  </header>
+    <main>
+    <div class="timer" id="timerDisplay">⏱ Ժամանակ: 0 վրկ</div>
+
+    <canvas id="sineCanvas" width="800" height="400"></canvas>
+
+    <div class="controls">
+      <div class="control">
+        <label for="waveType" class="range-label">Ալիքի տեսակը</label>
+        <select id="waveType">
+          <option value="sin">Սինուս</option>
+          <option value="triangle">Եռանկյուն</option>
+          <option value="sawtooth">Սղոցատամ</option>
+        </select>
+      </div>
+      <div class="control">
+        <label for="amplitude" class="range-label">Ամպլիտուդ</label>
+        <input type="range" id="amplitude" min="20" max="200" value="100">
+        <span class="range-value" id="ampValue">100</span>
+      </div>
+      <div class="control">
+        <label for="frequency" class="range-label">Հաճախականություն</label>
+        <input type="range" id="frequency" min="1" max="20" value="4">
+        <span class="range-value" id="freqValue">4</span>
+      </div>
+      <div class="control">
+        <label for="speed" class="range-label">Արագություն (գրաֆիկա + ձայն)</label>
+        <input type="range" id="speed" min="0.5" max="2" step="0.1" value="1">
+        <span class="range-value" id="speedValue">1</span>
+      </div>
+      <div class="control">
+        <label for="audioFile">Ներբեռնել ձայնը</label>
+        <input type="file" id="audioFile" accept="audio/*">
+      </div>
+      <div class="buttons" style="text-align: center;">
+        <button onclick="startGame()">▶️ Սկսել</button>
+        <button onclick="stopGame()">⏹ Ավարտ</button>
+      </div>
+    </div>
+
+    <script>
+      const canvas = document.getElementById("sineCanvas");
+      const ctx = canvas.getContext("2d");
+
+      const ampInput = document.getElementById("amplitude");
+      const freqInput = document.getElementById("frequency");
+      const speedInput = document.getElementById("speed");
+      const waveTypeInput = document.getElementById("waveType");
+      const timerDisplay = document.getElementById("timerDisplay");
+      const fileInput = document.getElementById("audioFile");
+
+      const ampValue = document.getElementById("ampValue");
+      const freqValue = document.getElementById("freqValue");
+      const speedValue = document.getElementById("speedValue");
+
+      let phase = 0;
+      let isRunning = false;
+      let animationId = null;
+      let timer = 0;
+      let timerInterval = null;
+
+      let audioCtx = null;
+      let analyser = null;
+      let source = null;
+      let dataArray = null;
+      let currentAudioBuffer = null;
+      let playbackRate = 1;
+
+      function waveFunction(type, angle) {
+        switch(type) {
+          case "sin": return Math.sin(angle);
+          case "triangle": return 2 * Math.abs(2 * (angle / (2 * Math.PI) - Math.floor(angle / (2 * Math.PI) + 0.5))) - 1;
+          case "sawtooth": return 2 * (angle / (2 * Math.PI) - Math.floor(0.5 + angle / (2 * Math.PI)));
+          default: return Math.sin(angle);
+        }
+      }
+
+      function draw() {
+        if (!isRunning) return;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const width = canvas.width;
+        const height = canvas.height;
+        const midY = height / 2;
+
+        ctx.strokeStyle = "#ccc";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, midY);
+        ctx.lineTo(width, midY);
+        ctx.stroke();
+
+        if (dataArray && analyser) {
+        analyser.getByteTimeDomainData(dataArray);
+        ctx.beginPath();
+         for (let i = 0; i < width; i++) {
+          const index = Math.floor(i * (dataArray.length / width));
+         const y = dataArray[index] / 128.0 * midY;
+         const yScaled = midY + (y - midY) * (1 / playbackRate); 
+         if (i === 0) ctx.moveTo(i, yScaled);
+        else ctx.lineTo(i, yScaled);
+         }
+         ctx.strokeStyle = "#e91e63";
+         ctx.lineWidth = 2;
+         ctx.stroke();
+         }
+         else {
+          const amp = parseFloat(ampInput.value);
+          const freq = parseFloat(freqInput.value);
+          const speed = parseFloat(speedInput.value);
+          const type = waveTypeInput.value;
+
+          ctx.strokeStyle = "#3498db";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+
+          for (let x = 0; x < width; x++) {
+            const angle = (x / width) * freq * 2 * Math.PI + phase;
+            const y = waveFunction(type, angle);
+            const yPos = midY - y * amp;
+            if (x === 0) ctx.moveTo(x, yPos);
+            else ctx.lineTo(x, yPos);
+          }
+          ctx.stroke();
+          phase += speed * 0.02;
+        }
+
+        animationId = requestAnimationFrame(draw);
+      }
+
+      function startGame() {
+        if (!isRunning) {
+          isRunning = true;
+          if (source && audioCtx.state !== "running") {
+            audioCtx.resume();
+            source.playbackRate.value = playbackRate;
+          }
+          draw();
+          timerInterval = setInterval(() => {
+            timer++;
+            timerDisplay.textContent = `⏱ Ժամանակ: ${timer} վրկ`;
+          }, 1000);
+        }
+      }
+
+      function stopGame() {
+        isRunning = false;
+        cancelAnimationFrame(animationId);
+        clearInterval(timerInterval);
+        if (audioCtx) {
+          audioCtx.suspend();
+        }
+      }
+
+      ampInput.addEventListener("input", () => ampValue.textContent = ampInput.value);
+      freqInput.addEventListener("input", () => freqValue.textContent = freqInput.value);
+      speedInput.addEventListener("input", () => {
+        speedValue.textContent = speedInput.value;
+        playbackRate = parseFloat(speedInput.value);
+        if (source) source.playbackRate.value = playbackRate;
+      });
+
+      fileInput.addEventListener("change", async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const arrayBuffer = await file.arrayBuffer();
+        currentAudioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+
+        if (source) source.disconnect();
+        source = audioCtx.createBufferSource();
+        source.buffer = currentAudioBuffer;
+        source.playbackRate.value = playbackRate;
+
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 2048;
+        dataArray = new Uint8Array(analyser.fftSize);
+
+        source.connect(analyser);
+        analyser.connect(audioCtx.destination);
+
+        source.start(0);
+      });
+    </script>
+  </main>
+</body>
+</html>
